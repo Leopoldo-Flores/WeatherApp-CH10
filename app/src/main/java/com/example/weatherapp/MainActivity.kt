@@ -18,11 +18,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.weatherapp.network.AppConstants
+import com.example.weatherapp.network.RetrofitClient
+import kotlinx.coroutines.Dispatchers  // thread types: Main (UI), IO (network/disk)
+import kotlinx.coroutines.launch       // .launch {} starts a coroutine
+import kotlinx.coroutines.withContext  // switches thread context inside a coroutine
+// class 2
+import android.util.Log
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,7 +51,11 @@ fun WeatherScreen() {
     var cityText by remember { mutableStateOf("City: --") }
     var temperatureText by remember { mutableStateOf("Temperature: --") }
     var descriptionText by remember { mutableStateOf("Description: --") }
+    var windResult by remember { mutableStateOf("Wind Speed: --") }
+    var humidityResult by remember { mutableStateOf("Humidity: --") }
+    var isLoading by remember { mutableStateOf(false) }
 
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
@@ -55,6 +67,7 @@ fun WeatherScreen() {
         )
 
         Button(
+            enabled = isLoading, // disables the button mid-request - stops duplicate calls
             onClick = {
                 // This block runs every time the "Get Weather" button is tapped
                 val trimmedCity = city.trim()
@@ -64,6 +77,44 @@ fun WeatherScreen() {
                     // .isEmpty() = true if the string has 0 characters
                     Toast.makeText(context, "Please enter a city name", Toast.LENGTH_SHORT).show()
                 } else {
+                    isLoading = true
+                    scope.launch {
+                        try {
+                            val response = withContext(Dispatchers.IO) {
+                                RetrofitClient.weatherApiService.getWeather(
+                                    city = trimmedCity,
+                                    apiKey = AppConstants.API_KEY,
+                                    units = AppConstants.UNITS
+                                )
+                            } // response.raw() gives the underlying OkHttp response
+                              // request.url is the exact URL Retrofit built. can check in LOGCAT
+                            Log.d("WeatherApp", "Request URL: ${response.raw().request.url}")
+                            Log.d("WeatherApp", "Request code: ${response.code()}")
+
+                            if (response.isSuccessful) {
+                                val weather = response.body()
+                                if (weather != null) {
+                                    city = "City: ${weather.name}"
+                                    temperatureText = "Temperature: ${weather.main.temp}"
+                                    descriptionText = "Description: ${weather.weather[0].description}"
+                                    // Steps to complete:
+                                    // 1. Set windResult from weather.wind.speed (append "MPH")
+                                    // 2. Set humidityResult from weather.main.humidity (append "%")
+                                    // 3. Below in the else branch, replace the single Toast with a
+                                    //    when (response.code()) --
+                                }
+                            } else{
+                                // This Toast gets replaced by step
+                                // with different messages for 404, 401, and anything else (401- invalid key)
+                                Toast.makeText(context, "City not found. Check the name and try again.", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Network error. Check your connection.", Toast.LENGTH_SHORT).show()
+                        }
+                        finally {
+                            isLoading = false
+                        }
+                    }
                     fetchWeather(trimmedCity, context) { c, t, d ->
                         cityText = c
                         temperatureText = t
@@ -74,12 +125,15 @@ fun WeatherScreen() {
             modifier =
                 Modifier.fillMaxWidth().padding(top = 8.dp)
         ) {
-            Text("Get Weather")
+            Text(if (isLoading) "Loading.." else "Get Weather")
         }
 
-        Text(cityText, modifier = Modifier.padding(top = 24.dp))
-        Text(temperatureText, modifier = Modifier.padding(top = 8.dp))
-        Text(descriptionText, modifier = Modifier.padding(top = 8.dp))
+        Text(cityText, fontSize = 20.sp, modifier = Modifier.padding(top = 24.dp))
+        Text(temperatureText, fontSize = 18.sp,  modifier = Modifier.padding(top = 8.dp))
+        Text(descriptionText, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+        Text(windResult, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+        Text(humidityResult, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+
     }
 }
 
