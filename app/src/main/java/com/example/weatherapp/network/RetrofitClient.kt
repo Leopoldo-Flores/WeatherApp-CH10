@@ -16,4 +16,52 @@ object RetrofitClient {
             // java - tells retrofit which interface to implement
             .create(WeatherApiService::class.java)
     }
+
+    val feedbackApiService: FeedbackApiService by lazy {
+        Retrofit.Builder()
+            .baseUrl(AppConstants.FEEDBACK_BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(FeedbackApiService::class.java)
+    }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

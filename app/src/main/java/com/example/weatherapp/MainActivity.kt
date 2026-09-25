@@ -31,6 +31,10 @@ import kotlinx.coroutines.launch       // .launch {} starts a coroutine
 import kotlinx.coroutines.withContext  // switches thread context inside a coroutine
 // class 2
 import android.util.Log
+// class 3
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Slider
+import com.example.weatherapp.data.FeedbackRequest
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +58,11 @@ fun WeatherScreen() {
     var windResult by remember { mutableStateOf("Wind Speed: --") }
     var humidityResult by remember { mutableStateOf("Humidity: --") }
     var isLoading by remember { mutableStateOf(false) }
+    // Post
+    var currentCity by remember { mutableStateOf("") }
+    var rating by remember { mutableStateOf(3) }
+    var comment by remember { mutableStateOf("") }
+    var feedbackResult by remember { mutableStateOf("") }
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -97,6 +106,9 @@ fun WeatherScreen() {
                                     city = "City: ${weather.name}"
                                     temperatureText = "Temperature: ${weather.main.temp}"
                                     descriptionText = "Description: ${weather.weather[0].description}"
+                                    windResult = "Wind Speed: ${weather.wind.speed} MPH"
+                                    humidityResult = "Humidity: ${weather.main.humidity}%"
+                                    currentCity = trimmedCity
                                     // Steps to complete:
                                     // 1. Set windResult from weather.wind.speed (append "MPH")
                                     // 2. Set humidityResult from weather.main.humidity (append "%")
@@ -106,7 +118,11 @@ fun WeatherScreen() {
                             } else{
                                 // This Toast gets replaced by step
                                 // with different messages for 404, 401, and anything else (401- invalid key)
-                                Toast.makeText(context, "City not found. Check the name and try again.", Toast.LENGTH_SHORT).show()
+                                when (response.code()) {
+                                    404 -> Toast.makeText(context, "City not found. Check the name and try again.", Toast.LENGTH_SHORT).show()
+                                    401 -> Toast.makeText(context, "Invalid API key. Check AppConstants.kt.", Toast.LENGTH_SHORT).show()
+                                    else ->Toast.makeText(context, "Something went wrong (code ${response.code()}", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         } catch (e: Exception) {
                             Toast.makeText(context, "Network error. Check your connection.", Toast.LENGTH_SHORT).show()
@@ -134,6 +150,56 @@ fun WeatherScreen() {
         Text(windResult, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
         Text(humidityResult, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
 
+        HorizontalDivider(modifier = Modifier.padding(top = 24.dp, bottom = 16.dp))
+
+        Text("How do you feel about today's weather?", fontSize = 16.sp)
+
+        Slider(
+            value = rating.toFloat(),
+            onValueChange = { rating = it.toInt() },
+            valueRange = 1f..5f,
+            steps = 3 // stops between 1 and 5 - 5 total selectable whole numbers
+        )
+        Text("Rating: $rating/5") // slider has no built-in label
+
+        TextField(
+            value = comment,
+            onValueChange = { comment = it },
+            label = { Text("Leave a comment about the weather...") },
+            minLines = 3,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+
+        Button(
+            onClick = {
+                if (currentCity.isEmpty()) {
+                    Toast.makeText(context, "Please fetch a weather for a city first", Toast.LENGTH_SHORT).show()
+                } else if (comment.isBlank()) {
+                    Toast.makeText(context, "Please leave a comment", Toast.LENGTH_SHORT).show()
+                } else {
+                    scope.launch {
+                        try {                             // Gson converts this to JSON
+                            val request = FeedbackRequest(city = currentCity, rating = rating, comment = comment)
+
+                            val response = withContext(Dispatchers.IO) {
+                                RetrofitClient.feedbackApiService.submitFeedback(request)
+                            }
+                            // ASSIGNMENT 3
+                            // 1. If response.isSuccessful: set feedbackResult to a success message, then
+                            //    clear the comment field and reset rating back to 3
+                            // 2. If NOT successful: set feedbackResult to a failure message
+
+                        } catch (e: Exception) {
+                            feedbackResult = "Error submitting feedback. Check your connection."
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        ) {
+            Text("Submit Feedback")
+        }
+        Text(feedbackResult, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
     }
 }
 

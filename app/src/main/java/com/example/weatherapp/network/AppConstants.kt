@@ -8,4 +8,6 @@ object AppConstants {
     const val API_KEY = "e275afad81908887d9b24b05ab98fe6f"
 
     const val UNITS = "imperial"
+
+    const val FEEDBACK_BASE_URL = "https://mock.apidog.com/m1/1386452-1392954-default/feedback"
 }
