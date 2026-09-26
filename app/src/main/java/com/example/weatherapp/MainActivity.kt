@@ -31,14 +31,22 @@ import kotlinx.coroutines.launch       // .launch {} starts a coroutine
 import kotlinx.coroutines.withContext  // switches thread context inside a coroutine
 // class 2
 import android.util.Log
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AssistChip
 // class 3
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import com.example.weatherapp.data.FeedbackRequest
+// !isLoading line 81 ||| cityText line 108 FIX THIS. code()})." line 126 DELETE fetchWeather fun
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        RetrofitClient.init(this)
+        // Before SetContent since both are by lazy and builds the cache first
         setContent {
             MaterialTheme {
                 Surface {
@@ -48,6 +56,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+
+// Inside WeatherScreen(), find the Submit Feedback Button's onClick.
+// Right before "scope.launch {" is where Assignment 4 goes:
+
+// Steps to complete:
+// 1. Declare "var feedbackLoading by remember { mutableStateOf(false) }"
+//    near the top of WeatherScreen(), next to the other state variables
+// 2. Set feedbackLoading = true right before the feedback scope.launch { }
+// 3. Set feedbackLoading = false inside a finally { } wrapped around the
+//    feedback try/catch -- same shape as Get Weather's finally block
+// 4. On the Submit Feedback Button: add enabled = !feedbackLoading,
+//    and swap its Text to "Submitting..." while feedbackLoading is true
 
 @Composable
 fun WeatherScreen() {
@@ -63,6 +84,8 @@ fun WeatherScreen() {
     var rating by remember { mutableStateOf(3) }
     var comment by remember { mutableStateOf("") }
     var feedbackResult by remember { mutableStateOf("") }
+    // CACHE
+    var recentSearches by remember { mutableStateOf(listOf<String>())}
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -76,7 +99,7 @@ fun WeatherScreen() {
         )
 
         Button(
-            enabled = isLoading, // disables the button mid-request - stops duplicate calls
+            enabled = !isLoading, // disables the button mid-request - stops duplicate calls
             onClick = {
                 // This block runs every time the "Get Weather" button is tapped
                 val trimmedCity = city.trim()
@@ -103,12 +126,16 @@ fun WeatherScreen() {
                             if (response.isSuccessful) {
                                 val weather = response.body()
                                 if (weather != null) {
-                                    city = "City: ${weather.name}"
+                                    cityText = "City: ${weather.name}"
                                     temperatureText = "Temperature: ${weather.main.temp}"
                                     descriptionText = "Description: ${weather.weather[0].description}"
                                     windResult = "Wind Speed: ${weather.wind.speed} MPH"
                                     humidityResult = "Humidity: ${weather.main.humidity}%"
                                     currentCity = trimmedCity
+
+                                    recentSearches = (listOf(weather.name) + recentSearches.filter { it != weather.name}).take(5)
+                                    // filter removes duplicates. then places new searches at the front of the list. caps list at 5
+
                                     // Steps to complete:
                                     // 1. Set windResult from weather.wind.speed (append "MPH")
                                     // 2. Set humidityResult from weather.main.humidity (append "%")
@@ -121,8 +148,7 @@ fun WeatherScreen() {
                                 when (response.code()) {
                                     404 -> Toast.makeText(context, "City not found. Check the name and try again.", Toast.LENGTH_SHORT).show()
                                     401 -> Toast.makeText(context, "Invalid API key. Check AppConstants.kt.", Toast.LENGTH_SHORT).show()
-                                    else ->Toast.makeText(context, "Something went wrong (code ${response.code()}", Toast.LENGTH_SHORT).show()
-                                }
+                                    else -> Toast.makeText(context, "Something went wrong (code ${response.code()}).", Toast.LENGTH_SHORT).show()                                }
                             }
                         } catch (e: Exception) {
                             Toast.makeText(context, "Network error. Check your connection.", Toast.LENGTH_SHORT).show()
@@ -130,11 +156,6 @@ fun WeatherScreen() {
                         finally {
                             isLoading = false
                         }
-                    }
-                    fetchWeather(trimmedCity, context) { c, t, d ->
-                        cityText = c
-                        temperatureText = t
-                        descriptionText = d
                     }
                 }
             },
@@ -149,6 +170,30 @@ fun WeatherScreen() {
         Text(descriptionText, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
         Text(windResult, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
         Text(humidityResult, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+
+        // Cache Control + Recent Searches
+        OutlinedButton(
+            onClick = {
+                RetrofitClient.clearCache()
+                Toast.makeText(context, "Cache Cleared", Toast.LENGTH_SHORT).show()
+            }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        ){
+            Text("Clear Cache")
+        }
+        if (recentSearches.isNotEmpty()) {
+            Text("Recent Searches", fontSize = 14.sp, modifier = Modifier.padding(top = 16.dp))
+            Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp)){
+                recentSearches.forEach { recentCity ->
+                    AssistChip(
+                        onClick = { city = recentCity },
+                        label = { Text(recentCity) },
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
+            }
+        }
+
+
 
         HorizontalDivider(modifier = Modifier.padding(top = 24.dp, bottom = 16.dp))
 
@@ -188,7 +233,13 @@ fun WeatherScreen() {
                             // 1. If response.isSuccessful: set feedbackResult to a success message, then
                             //    clear the comment field and reset rating back to 3
                             // 2. If NOT successful: set feedbackResult to a failure message
-
+                            if (response.isSuccessful) {
+                                feedbackResult = "Feedback submitted successfully!"
+                                comment = ""
+                                rating = 3
+                            } else {
+                                feedbackResult = "Failed to submit feedback. Try again"
+                            }
                         } catch (e: Exception) {
                             feedbackResult = "Error submitting feedback. Check your connection."
                         }
@@ -204,28 +255,6 @@ fun WeatherScreen() {
 }
 
 
-private fun fetchWeather(
-    city: String,
-    context: android.content.Context,
-    onResult: (city: String,temp: String, desc: String) -> Unit
-){
-    // =======================================================
-    // ASSIGNMENT 1 -- Implement this function!
-    // =======================================================
-    // Steps to complete:
-    // 1. This function needs a CoroutineScope since it's not inside an Activity --
-    //    use kotlinx.coroutines.MainScope() or pass one in from the composable
-    //    via rememberCoroutineScope() (covered in class)
-    // 2. Inside it, use withContext(Dispatchers.IO) { } for the network call
-    // 3. Call RetrofitClient.weatherApiService.getWeather(city, AppConstants.API_KEY, AppConstants.UNITS)
-    // 4. Check if response.isSuccessful
-    // 5. If YES: call onResult(...) with the city, temperature, and description strings
-    // 6. If NO: show a Toast "City not found. Check the name and try again."
-    // 7. Wrap everything in try { } catch (e: Exception) { } for network errors
-
-    // DELETE this placeholder line when you implement the function:
-    Toast.makeText(context, "Coming soon -- weather for $city", Toast.LENGTH_SHORT).show()
-}
 
 
 
